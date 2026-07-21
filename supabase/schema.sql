@@ -93,6 +93,52 @@ create index if not exists idx_enrich_contact    on enrichment_fields(contact_id
 create index if not exists idx_accounts_domain   on accounts(workspace_id, domain);
 
 -- ═══════════════════════════════════════════════════════════════
+-- HITL notify-and-approve loop (spec §Screen 7 Approval Queue + Conversation Ops)
+-- ═══════════════════════════════════════════════════════════════
+
+-- Where the user wants to be pinged, and which channel binding to use.
+create table if not exists channel_bindings (
+  id uuid primary key default uuid_generate_v4(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  channel text not null,                 -- 'telegram' | 'whatsapp' | 'email'
+  identifier text not null,              -- telegram chat_id / WA phone (E.164) / email address
+  config jsonb default '{}'::jsonb,       -- bot_token / access_token+phone_number_id / from
+  verified boolean default false,
+  created_at timestamptz default now(),
+  unique (workspace_id, channel)
+);
+
+create table if not exists notification_prefs (
+  workspace_id uuid primary key references workspaces(id) on delete cascade,
+  channels text[] default array['telegram','email'],  -- push order; TG/email are window-free
+  digest_time text default '08:00',                    -- batched fallback (timezone-aware later)
+  per_event boolean default true                       -- true = ping immediately, not just digest
+);
+
+-- The queue of actions awaiting human approval + the notify status of each.
+create table if not exists approval_queue (
+  id uuid primary key default uuid_generate_v4(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  kind text not null,                    -- 'reply_comment' | 'send_message' | 'send_sequence_step' | 'engage_post'
+  title text not null,                   -- "פוסט חדש של X שכדאי להגיב אליו"
+  body text,                             -- the drafted content the user is approving
+  target_ref text,                       -- external id (comment_id / thread_id / post url)
+  channel text,                          -- execution channel of the action itself
+  status text default 'pending',         -- pending | notified | approved | rejected | executed | failed
+  notified_at timestamptz,
+  decided_at timestamptz,
+  created_at timestamptz default now()
+);
+
+alter table channel_bindings   enable row level security;
+alter table notification_prefs enable row level security;
+alter table approval_queue     enable row level security;
+create policy "auth all bindings" on channel_bindings   for all to authenticated using (true) with check (true);
+create policy "auth all prefs"    on notification_prefs  for all to authenticated using (true) with check (true);
+create policy "auth all approvals" on approval_queue     for all to authenticated using (true) with check (true);
+create index if not exists idx_approval_ws_status on approval_queue(workspace_id, status);
+
+-- ═══════════════════════════════════════════════════════════════
 -- Product 02 (HELIX Dashboards) connection:
 --   Metrics are PUSHED to Product 02, not pulled. See lib/helix/dashboards.ts.
 --   Later slices add: signals, mentions, sequences, threads, messages,
