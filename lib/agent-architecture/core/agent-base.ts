@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import OpenAI from 'openai';
+import { createLLM, CLAUDE_MODEL } from '@/lib/helix/llm';
 
 export interface AgentContext<T = unknown> {
   input: T;
@@ -29,7 +30,7 @@ export abstract class BaseAgent<TInput = unknown, TOutput = unknown> {
     public inputSchema?: z.ZodSchema<TInput>,
     public outputSchema?: z.ZodSchema<TOutput>
   ) {
-    this.openai = new OpenAI({ apiKey });
+    this.openai = createLLM(apiKey);
   }
   
   abstract instructions(context: AgentContext<TInput>): string;
@@ -78,7 +79,7 @@ export abstract class BaseAgent<TInput = unknown, TOutput = unknown> {
     const allTools = [...tools, ...handoffTools];
     
     const response = await this.openai.chat.completions.create({
-      model: 'gpt-5',
+      model: CLAUDE_MODEL,
       messages,
       tools: allTools.length > 0 ? allTools : undefined,
       response_format: this.outputSchema ? { type: 'json_object' } : undefined,

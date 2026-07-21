@@ -1,9 +1,27 @@
-# Migration: OpenAI → Claude
+# Migration: OpenAI → Claude ✅ DONE (V1)
 
-fire-enrich ships wired to OpenAI (structured outputs via `openai` SDK + `zodResponseFormat`).
-HELIX runs on **Claude** (spec: the AI layer is the differentiator). This is the swap plan.
+fire-enrich shipped wired to OpenAI. HELIX runs on **Claude**. Swap completed via Anthropic's
+**OpenAI-compatibility endpoint** — the lowest-risk path: all existing message/tool/response_format
+logic stays; only the client + models were repointed.
 
-## Approach
+## What was actually done
+- `lib/helix/llm.ts` — `createLLM()` returns the OpenAI SDK pointed at `https://api.anthropic.com/v1/`
+  + `CLAUDE_MODEL` (sonnet-5) / `CLAUDE_MODEL_FAST` (haiku-4.5).
+- Replaced all 3 `new OpenAI(...)` → `createLLM(...)` (agent-base, services/openai, generate-fields).
+- Replaced all model strings (`gpt-5`→CLAUDE_MODEL, `gpt-5-mini`→CLAUDE_MODEL_FAST).
+- Converted 3 strict `zodResponseFormat` (json_schema) calls → `{type:'json_object'}` +
+  manual/Zod parse (compat layer doesn't support strict json_schema).
+- Routes/UI now gate on `ANTHROPIC_API_KEY` (X-Anthropic-API-Key header) instead of OpenAI.
+- `next build` passes (types + lint).
+
+## ⚠️ Runtime caveats (verify once ANTHROPIC_API_KEY is added)
+- **json_object** on the compat layer expects "json" mentioned in the prompt — most prompts already
+  ask for structured data; if any call returns prose, add an explicit "respond in JSON" line.
+- If structured-output quality is insufficient, the targeted upgrade is Anthropic-native tool-use
+  (or AI SDK `generateObject`) for the two enrichment calls in `lib/services/openai.ts`.
+- Left `openai` + `@ai-sdk/openai` deps in place (unused) for easy rollback; remove once validated live.
+
+## Original approach (reference)
 
 Use the **Vercel AI SDK** (already a dependency: `ai`) with `@ai-sdk/anthropic` (added).
 Replace OpenAI structured-output calls with `generateObject({ model: anthropic(...), schema })` —

@@ -18,8 +18,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get API keys
-    const openaiApiKey = process.env.OPENAI_API_KEY || request.headers.get('X-OpenAI-API-Key');
+    // Get API keys (LLM = Claude via compat layer; var name kept for downstream)
+    const openaiApiKey = process.env.ANTHROPIC_API_KEY || request.headers.get('X-Anthropic-API-Key');
     const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || request.headers.get('X-Firecrawl-API-Key');
 
     if (!openaiApiKey || !firecrawlApiKey) {

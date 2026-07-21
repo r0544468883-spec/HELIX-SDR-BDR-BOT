@@ -52,7 +52,7 @@ export default function CSVEnrichmentPage() {
         }
         const data = await response.json();
         const hasFirecrawl = data.environmentStatus.FIRECRAWL_API_KEY;
-        const hasOpenAI = data.environmentStatus.OPENAI_API_KEY;
+        const hasOpenAI = data.environmentStatus.ANTHROPIC_API_KEY;
 
         if (!hasFirecrawl) {
           // Check localStorage for saved API key
@@ -84,7 +84,7 @@ export default function CSVEnrichmentPage() {
     const response = await fetch("/api/check-env");
     const data = await response.json();
     const hasFirecrawl = data.environmentStatus.FIRECRAWL_API_KEY;
-    const hasOpenAI = data.environmentStatus.OPENAI_API_KEY;
+    const hasOpenAI = data.environmentStatus.ANTHROPIC_API_KEY;
     const savedFirecrawlKey = localStorage.getItem("firecrawl_api_key");
     const savedOpenAIKey = localStorage.getItem("openai_api_key");
 
@@ -135,7 +135,7 @@ export default function CSVEnrichmentPage() {
     const response = await fetch("/api/check-env");
     const data = await response.json();
     const hasEnvFirecrawl = data.environmentStatus.FIRECRAWL_API_KEY;
-    const hasEnvOpenAI = data.environmentStatus.OPENAI_API_KEY;
+    const hasEnvOpenAI = data.environmentStatus.ANTHROPIC_API_KEY;
     const hasSavedFirecrawl = localStorage.getItem("firecrawl_api_key");
     const hasSavedOpenAI = localStorage.getItem("openai_api_key");
 

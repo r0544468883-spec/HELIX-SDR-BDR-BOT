@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
-import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { FieldGenerationResponse } from '@/lib/types/field-generation';
+import { createLLM, CLAUDE_MODEL } from '@/lib/helix/llm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,19 +14,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
+        { error: 'Anthropic API key not configured' },
         { status: 500 }
       );
     }
 
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
+    const openai = createLLM();
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-5',
+      model: CLAUDE_MODEL,
       messages: [
         {
           role: 'system',
@@ -51,14 +48,8 @@ export async function POST(request: NextRequest) {
           content: prompt
         }
       ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'field_generation',
-          strict: true,
-          schema: zodResponseFormat(FieldGenerationResponse, 'field_generation').json_schema.schema
-        }
-      }
+      // Anthropic compat layer supports json_object (not strict json_schema); we validate below with Zod.
+      response_format: { type: 'json_object' }
     });
 
     const message = completion.choices[0].message;
@@ -67,7 +58,7 @@ export async function POST(request: NextRequest) {
       throw new Error('No response content');
     }
     
-    const parsed = JSON.parse(message.content) as z.infer<typeof FieldGenerationResponse>;
+    const parsed = FieldGenerationResponse.parse(JSON.parse(message.content)) as z.infer<typeof FieldGenerationResponse>;
 
     return NextResponse.json({
       success: true,

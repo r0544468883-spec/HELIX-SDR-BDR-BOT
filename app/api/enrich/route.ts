@@ -50,8 +50,8 @@ export async function POST(request: NextRequest) {
     const abortController = new AbortController();
     activeSessions.set(sessionId, abortController);
 
-    // Check environment variables and headers for API keys
-    const openaiApiKey = process.env.OPENAI_API_KEY || request.headers.get('X-OpenAI-API-Key');
+    // Check environment variables and headers for API keys (LLM = Claude via compat layer; var name kept for downstream)
+    const openaiApiKey = process.env.ANTHROPIC_API_KEY || request.headers.get('X-Anthropic-API-Key');
     const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || request.headers.get('X-Firecrawl-API-Key');
     
     if (!openaiApiKey || !firecrawlApiKey) {

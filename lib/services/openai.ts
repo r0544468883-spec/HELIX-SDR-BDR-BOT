@@ -1,13 +1,14 @@
 import OpenAI from 'openai';
 import { z } from 'zod';
-import { zodResponseFormat } from 'openai/helpers/zod';
 import type { EnrichmentField, EnrichmentResult } from '../types';
+import { createLLM, CLAUDE_MODEL, CLAUDE_MODEL_FAST } from '@/lib/helix/llm';
 
+// Kept the class name for drop-in compatibility with the fire-enrich base; it now runs on Claude.
 export class OpenAIService {
   private client: OpenAI;
 
   constructor(apiKey: string) {
-    this.client = new OpenAI({ apiKey });
+    this.client = createLLM(apiKey);
   }
 
   createEnrichmentSchema(fields: EnrichmentField[]) {
@@ -139,7 +140,7 @@ export class OpenAIService {
       }
 
       const response = await this.client.chat.completions.create({
-        model: 'gpt-5',
+        model: CLAUDE_MODEL,
         messages: [
           {
             role: 'system',
@@ -249,7 +250,7 @@ DOMAIN PARKING/SALE PAGES:
             content: trimmedContent,
           },
         ],
-        response_format: zodResponseFormat(schema, 'enrichment_data'),
+        response_format: { type: 'json_object' }, // Claude compat: json_object + manual parse below (schema-guided via prompt)
       });
 
       const messageContent = response.choices[0].message.content;
@@ -375,7 +376,7 @@ DOMAIN PARKING/SALE PAGES:
       }
       
       const response = await this.client.chat.completions.create({
-        model: 'gpt-5',
+        model: CLAUDE_MODEL,
         messages: [
           {
             role: 'system',
@@ -491,7 +492,7 @@ REMEMBER: Extract exact_text from the "=== ACTUAL CONTENT BELOW ===" section, NO
             content: trimmedContent,
           },
         ],
-        response_format: zodResponseFormat(schema, 'corroborated_data'),
+        response_format: { type: 'json_object' }, // Claude compat: json_object + manual parse below
         temperature: 0.1, // Lower temperature for more consistent extraction
       });
 
@@ -766,7 +767,7 @@ REMEMBER: Extract exact_text from the "=== ACTUAL CONTENT BELOW ===" section, NO
         .join('\n');
       
       const response = await this.client.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: CLAUDE_MODEL_FAST,
         messages: [
           {
             role: 'system',
@@ -836,7 +837,7 @@ ${schemaDescription}
   ): Promise<string[]> {
     try {
       const response = await this.client.chat.completions.create({
-        model: 'gpt-5',
+        model: CLAUDE_MODEL,
         messages: [
           {
             role: 'system',
@@ -903,7 +904,7 @@ Return ONLY the search query, nothing else.`
       });
 
       const response = await this.client.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: CLAUDE_MODEL_FAST,
         messages,
         temperature: 0.3,
         max_tokens: 100,
@@ -975,7 +976,7 @@ Question: ${question}
       });
 
       const response = await this.client.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: CLAUDE_MODEL_FAST,
         messages,
         temperature: 0.1, // Lower temperature for more consistent behavior
         max_tokens: 500,
@@ -1009,7 +1010,7 @@ Question: ${question}
   ): Promise<{ url: string; title?: string }> {
     try {
       const response = await this.client.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: CLAUDE_MODEL_FAST,
         messages: [
           {
             role: 'system',
@@ -1068,7 +1069,7 @@ Be concise but informative. If the content doesn't contain the answer, say so. W
       });
 
       const response = await this.client.chat.completions.create({
-        model: 'gpt-5',
+        model: CLAUDE_MODEL,
         messages,
         temperature: 0.7,
         max_tokens: 500,
