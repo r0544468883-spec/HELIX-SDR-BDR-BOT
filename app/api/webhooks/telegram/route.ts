@@ -2,6 +2,7 @@
 // Register once: https://api.telegram.org/bot<TOKEN>/setWebhook?url=<APP_URL>/api/webhooks/telegram
 import { NextRequest, NextResponse } from 'next/server';
 import { decideApproval } from '@/lib/helix/notify';
+import { runExecutor } from '@/lib/helix/executor';
 import { answerCallback } from '@/lib/channels/telegram';
 
 export const runtime = 'nodejs';
@@ -28,6 +29,8 @@ export async function POST(request: NextRequest) {
       const status = await decideApproval(approvalId, decision);
       const toast = status === 'approved' ? 'אושר ✅ — שולח' : status === 'rejected' ? 'נדחה ✋' : 'כבר טופל';
       if (token) await answerCallback(token, cb.id, toast);
+      if (status === 'approved') await runExecutor(); // near-real-time send
+
     } else if (token) {
       await answerCallback(token, cb.id);
     }

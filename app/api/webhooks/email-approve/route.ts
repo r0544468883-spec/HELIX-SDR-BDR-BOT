@@ -2,6 +2,7 @@
 // GET /api/webhooks/email-approve?d=approve:<uuid>
 import { NextRequest, NextResponse } from 'next/server';
 import { decideApproval } from '@/lib/helix/notify';
+import { runExecutor } from '@/lib/helix/executor';
 
 export const runtime = 'nodejs';
 
@@ -12,6 +13,7 @@ export async function GET(request: NextRequest) {
     return new NextResponse('Invalid link', { status: 400 });
   }
   const status = await decideApproval(approvalId, action === 'approve' ? 'approve' : 'reject');
+  if (status === 'approved') await runExecutor(); // near-real-time send
   const msg =
     status === 'approved' ? 'אושר ✅ — הפעולה תישלח.' :
     status === 'rejected' ? 'נדחה ✋ — לא יישלח.' :
