@@ -139,6 +139,40 @@ create policy "auth all approvals" on approval_queue     for all to authenticate
 create index if not exists idx_approval_ws_status on approval_queue(workspace_id, status);
 
 -- ═══════════════════════════════════════════════════════════════
+-- Unibox foundation — one thread per conversation, messages in/out (spec §3.4)
+-- ═══════════════════════════════════════════════════════════════
+create table if not exists threads (
+  id uuid primary key default uuid_generate_v4(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  account_id uuid references accounts(id) on delete set null,
+  contact_id uuid references contacts(id) on delete set null,
+  channel text,                          -- last channel used
+  external_ref text,                     -- lead's phone / chat_id / email
+  classification text,                   -- interested | objection | question | not-now | spam
+  stage text default 'new',              -- new→discovery→proposal→dark→ghost→won/lost
+  last_inbound_at timestamptz,           -- opens the WA 24h window
+  created_at timestamptz default now(),
+  unique (workspace_id, channel, external_ref)
+);
+
+create table if not exists messages (
+  id uuid primary key default uuid_generate_v4(),
+  thread_id uuid not null references threads(id) on delete cascade,
+  channel text not null,
+  direction text not null,               -- 'in' | 'out'
+  body text,
+  external_id text,
+  created_at timestamptz default now()
+);
+
+alter table threads  enable row level security;
+alter table messages enable row level security;
+create policy "auth all threads"  on threads  for all to authenticated using (true) with check (true);
+create policy "auth all messages" on messages for all to authenticated using (true) with check (true);
+create index if not exists idx_threads_ws on threads(workspace_id);
+create index if not exists idx_messages_thread on messages(thread_id);
+
+-- ═══════════════════════════════════════════════════════════════
 -- Product 02 (HELIX Dashboards) connection:
 --   Metrics are PUSHED to Product 02, not pulled. See lib/helix/dashboards.ts.
 --   Later slices add: signals, mentions, sequences, threads, messages,
