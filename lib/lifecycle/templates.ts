@@ -27,6 +27,22 @@ function entityName(c: Customer): string | undefined {
   return (f.pet_name as string) || (f.entity as string) || undefined;
 }
 
+/** Shared render context — used by both free-text rendering and template {{n}} params. */
+export function renderContext(customer: Customer, meta: Meta) {
+  const entity = entityName(customer);
+  const coupon = meta.coupon as string | undefined;
+  return {
+    name: customer.name || 'שלום',
+    entity: entity || customer.name || '',
+    entityFor: entity ? ` ל־${entity}` : '',
+    date: (meta.date as string) || '',
+    time: (meta.time as string) || '',
+    product: (meta.product as string) || '',
+    couponLine: coupon ? `השתמש/י בקוד ${coupon} להטבה 🎁` : '',
+    token: meta.appt_token as string | undefined,
+  };
+}
+
 export function renderTemplate(kind: Kind, customer: Customer, meta: Meta, appUrl: string): string {
   const entity = entityName(customer);
   const token = meta.appt_token as string | undefined;

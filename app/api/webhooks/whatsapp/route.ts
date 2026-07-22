@@ -5,6 +5,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { handleInboundMessage } from '@/lib/helix/inbound';
 import { resolveWorkspaceForChannel } from '@/lib/helix/workspace';
+import { resolveOperatorWorkspace, handleOperatorCommand } from '@/lib/bot/operator';
+import { sendWhatsApp } from '@/lib/channels/whatsapp';
+import { supabaseAdmin } from '@/lib/helix/supabase';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,6 +45,15 @@ export async function POST(request: NextRequest) {
         for (const m of value?.messages ?? []) {
           const text = m.text?.body;
           if (!m.from || !text) continue; // skip non-text (media/status) for now
+
+          // Is the sender a linked OPERATOR? → run operator commands, not the lead flow.
+          const opWorkspace = await resolveOperatorWorkspace('whatsapp', m.from);
+          if (opWorkspace) {
+            const reply = await handleOperatorCommand({ workspaceId: opWorkspace, text });
+            const { data: b } = await supabaseAdmin().from('channel_bindings').select('config').eq('workspace_id', opWorkspace).eq('channel', 'whatsapp').maybeSingle();
+            await sendWhatsApp((b?.config ?? {}) as Record<string, unknown>, m.from, reply);
+            continue;
+          }
 
           const workspaceId = await resolveWorkspaceForChannel(
             'whatsapp',

@@ -68,15 +68,31 @@ create table if not exists lifecycle_jobs (
 );
 create index if not exists idx_lc_jobs_due on lifecycle_jobs(status, send_at);
 
+-- Operator↔workspace link: which chat identity (phone / telegram chat_id / email)
+-- is an OPERATOR of a workspace, so the bot routes their messages to operator
+-- commands (schedule / import / stats) instead of the lead auto-reply flow.
+create table if not exists bot_links (
+  id uuid primary key default uuid_generate_v4(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  channel text not null,                      -- whatsapp | telegram | email
+  identifier text not null,                   -- phone (E.164) / chat_id / email
+  role text default 'operator',               -- operator | admin
+  created_at timestamptz default now(),
+  unique (channel, identifier)
+);
+create index if not exists idx_bot_links_lookup on bot_links(channel, identifier);
+
 alter table lifecycle_customers enable row level security;
 alter table appointments        enable row level security;
 alter table purchases           enable row level security;
 alter table coupons             enable row level security;
 alter table lifecycle_jobs      enable row level security;
+alter table bot_links           enable row level security;
 do $$ begin
   create policy "auth all lc_customers" on lifecycle_customers for all to authenticated using (true) with check (true);
   create policy "auth all appointments" on appointments for all to authenticated using (true) with check (true);
   create policy "auth all purchases"    on purchases for all to authenticated using (true) with check (true);
   create policy "auth all coupons"      on coupons for all to authenticated using (true) with check (true);
   create policy "auth all lc_jobs"      on lifecycle_jobs for all to authenticated using (true) with check (true);
+  create policy "auth all bot_links"    on bot_links for all to authenticated using (true) with check (true);
 exception when duplicate_object then null; end $$;

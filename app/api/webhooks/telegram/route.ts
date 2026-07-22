@@ -3,7 +3,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { decideApproval } from '@/lib/helix/notify';
 import { runExecutor } from '@/lib/helix/executor';
-import { answerCallback } from '@/lib/channels/telegram';
+import { answerCallback, sendTelegram } from '@/lib/channels/telegram';
+import { resolveOperatorWorkspace, handleOperatorCommand } from '@/lib/bot/operator';
 
 export const runtime = 'nodejs';
 
@@ -13,11 +14,26 @@ interface TgUpdate {
     data?: string;                 // "approve:<uuid>" | "reject:<uuid>"
     message?: { chat?: { id?: number }; message_id?: number };
   };
+  message?: { chat?: { id?: number }; text?: string };
 }
 
 export async function POST(request: NextRequest) {
   try {
     const update = (await request.json()) as TgUpdate;
+
+    // Operator text command (not a button tap) → route to operator handler.
+    const msg = update.message;
+    if (msg?.text && msg.chat?.id) {
+      const chatId = String(msg.chat.id);
+      const workspaceId = await resolveOperatorWorkspace('telegram', chatId);
+      const token = process.env.TELEGRAM_BOT_TOKEN;
+      if (workspaceId && token) {
+        const reply = await handleOperatorCommand({ workspaceId, text: msg.text });
+        await sendTelegram({ bot_token: token, chat_id: chatId }, reply);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
     const cb = update.callback_query;
     if (!cb?.data) return NextResponse.json({ ok: true }); // ignore non-button updates for now
 

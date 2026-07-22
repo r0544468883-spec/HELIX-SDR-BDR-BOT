@@ -4,8 +4,10 @@
 // business-initiated messages outside the 24h window require an APPROVED WhatsApp
 // template — swap the text send for a template send once templates are approved.
 import { supabaseAdmin } from '@/lib/helix/supabase';
-import { sendWhatsApp } from '@/lib/channels/whatsapp';
-import { renderTemplate, type Kind } from './templates';
+import { sendWhatsApp, sendWhatsAppTemplate } from '@/lib/channels/whatsapp';
+import { renderTemplate, renderContext, type Kind } from './templates';
+import { templateParams } from '@/lib/templates/catalog';
+import type { ChannelConfig } from '@/lib/channels/types';
 
 type Job = { id: string; workspace_id: string; customer_id: string; kind: Kind; channel: string; meta: Record<string, unknown> };
 
@@ -33,8 +35,21 @@ export async function runLifecycle(limit = 50): Promise<{ sent: number; failed: 
       bindingCache.set(job.workspace_id, config);
     }
 
-    const body = renderTemplate(job.kind, { name: c.name, fields: c.fields as Record<string, unknown> }, job.meta ?? {}, appUrl);
-    const res = await sendWhatsApp(config, c.phone as string, body);
+    const customer = { name: c.name, fields: c.fields as Record<string, unknown> };
+    const meta = job.meta ?? {};
+    // Proactive by nature → prefer an APPROVED template (compliant out-of-window).
+    // If the template isn't approved yet, fall back to free-text (works in-window).
+    const ctx = renderContext(customer, meta);
+    const tpl = templateParams(job.kind, { ...ctx, entityFor: ctx.entityFor });
+    let res;
+    if (tpl) {
+      res = await sendWhatsAppTemplate(config as ChannelConfig, c.phone as string, tpl.def.name, tpl.def.language, tpl.params, tpl.def.urlButton ? ctx.token : undefined);
+      if (!res.ok && /template|not found|does not exist|132001|param/i.test(res.error ?? '')) {
+        res = await sendWhatsApp(config as ChannelConfig, c.phone as string, renderTemplate(job.kind, customer, meta, appUrl));
+      }
+    } else {
+      res = await sendWhatsApp(config as ChannelConfig, c.phone as string, renderTemplate(job.kind, customer, meta, appUrl));
+    }
     await mark(db, job.id, res.ok ? 'sent' : 'failed', res.externalId);
     if (res.ok) sent++; else failed++;
   }
