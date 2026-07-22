@@ -28,11 +28,18 @@ export async function classifyIntent(text: string): Promise<Intent> {
   }
 }
 
-/** Draft a reply to an inbound message, in the sender's language, grounded in recent history. */
+/** Past exchanges (how the user answered similar messages) used to ground the reply. */
+export interface ReplyExample {
+  question: string;
+  answer: string;
+}
+
+/** Draft a reply, in the sender's language, grounded in recent history AND past answers (RAG). */
 export async function draftReply(
   inbound: string,
   history: { direction: 'in' | 'out'; body: string }[] = [],
   intent: Intent = 'other',
+  examples: ReplyExample[] = [],
 ): Promise<string> {
   const llm = createLLM();
   const convo = history
@@ -40,8 +47,15 @@ export async function draftReply(
     .map((m) => `${m.direction === 'in' ? 'Them' : 'Us'}: ${m.body}`)
     .join('\n');
 
+  // Voice + content grounding: how THIS user answered similar messages before.
+  const memory = examples
+    .slice(0, 3)
+    .map((e, i) => `${i + 1}. Q: ${e.question}\n   A: ${e.answer}`)
+    .join('\n');
+
   const sys = `You are a helpful, human-sounding sales rep. Reply in the SAME language as the incoming message (Hebrew stays natural Hebrew).
-Detected intent: ${intent}. Handle objections calmly, answer questions concretely, never pushy. 2-4 short sentences. Sound like a real person, not a bot.`;
+Detected intent: ${intent}. Handle objections calmly, answer questions concretely, never pushy. 2-4 short sentences. Sound like a real person, not a bot.
+${memory ? `\nHere is how WE answered similar messages in the past — match this voice, tone and content (do not copy verbatim, adapt to the new message):\n${memory}` : ''}`;
   const user = `${convo ? `Conversation so far:\n${convo}\n\n` : ''}New incoming message:\n${inbound}\n\nWrite the reply.`;
 
   const res = await llm.chat.completions.create({

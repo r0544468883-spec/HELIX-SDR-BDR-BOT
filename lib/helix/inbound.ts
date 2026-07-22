@@ -7,6 +7,7 @@ import { supabaseAdmin } from './supabase';
 import { enqueueApproval } from './notify';
 import { runExecutor } from './executor';
 import { classifyIntent, draftReply } from '@/lib/agent/inbound';
+import { recallSimilar, rememberExchange } from './memory';
 
 export interface InboundMessage {
   workspaceId: string;
@@ -49,8 +50,18 @@ export async function handleInboundMessage(msg: InboundMessage): Promise<void> {
     .eq('thread_id', threadId)
     .order('created_at', { ascending: true })
     .limit(12);
-  const reply = await draftReply(msg.text, (history ?? []) as { direction: 'in' | 'out'; body: string }[], intent);
+  // Conversation Memory (RAG §3.3.6): ground the reply in how we answered similar messages.
+  const examples = await recallSimilar(msg.workspaceId, msg.text, 3);
+  const reply = await draftReply(
+    msg.text,
+    (history ?? []) as { direction: 'in' | 'out'; body: string }[],
+    intent,
+    examples.map((e) => ({ question: e.question, answer: e.answer })),
+  );
   if (!reply) return;
+
+  // Learn from this exchange so future replies improve (not generic).
+  await rememberExchange(msg.workspaceId, msg.text, reply, threadId);
 
   // 5) Trust ladder → approve-loop vs auto-send.
   const { data: ws } = await db.from('workspaces').select('trust_level').eq('id', msg.workspaceId).maybeSingle();

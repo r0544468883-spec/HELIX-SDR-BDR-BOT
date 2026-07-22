@@ -173,6 +173,41 @@ create index if not exists idx_threads_ws on threads(workspace_id);
 create index if not exists idx_messages_thread on messages(thread_id);
 
 -- ═══════════════════════════════════════════════════════════════
+-- Conversation Memory (RAG) — spec §3.3.6. Learn from the user's past replies so the
+-- AI answers in their voice + content, and improves over time (not generic).
+-- embedding dim = 768 (Ollama nomic-embed-text). Change if you use another embed model.
+-- ═══════════════════════════════════════════════════════════════
+create table if not exists conversation_memory (
+  id uuid primary key default uuid_generate_v4(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  question text not null,                -- an inbound message we handled
+  answer text not null,                  -- the reply the user sent / approved
+  embedding vector(768),                 -- of `question`
+  source_thread_id uuid references threads(id) on delete set null,
+  style_tags text[],
+  success_score numeric default 0,       -- bumped when the exchange led to a positive outcome
+  times_used integer default 0,          -- how often recalled to ground a new reply
+  created_at timestamptz default now()
+);
+alter table conversation_memory enable row level security;
+create policy "auth all convmem" on conversation_memory for all to authenticated using (true) with check (true);
+create index if not exists idx_convmem_ws on conversation_memory(workspace_id);
+
+-- Similarity search (cosine). Called via supabase.rpc('match_conversation_memory', ...).
+create or replace function match_conversation_memory(
+  p_workspace uuid,
+  p_query vector(768),
+  p_k int default 3
+) returns table(id uuid, question text, answer text, similarity float)
+language sql stable as $$
+  select id, question, answer, 1 - (embedding <=> p_query) as similarity
+  from conversation_memory
+  where workspace_id = p_workspace and embedding is not null
+  order by embedding <=> p_query
+  limit p_k;
+$$;
+
+-- ═══════════════════════════════════════════════════════════════
 -- Product 02 (HELIX Dashboards) connection:
 --   Metrics are PUSHED to Product 02, not pulled. See lib/helix/dashboards.ts.
 --   Later slices add: signals, mentions, sequences, threads, messages,
