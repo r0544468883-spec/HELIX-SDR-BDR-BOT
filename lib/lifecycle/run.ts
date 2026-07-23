@@ -7,6 +7,7 @@ import { supabaseAdmin } from '@/lib/helix/supabase';
 import { sendWhatsApp, sendWhatsAppTemplate } from '@/lib/channels/whatsapp';
 import { renderTemplate, renderContext, type Kind } from './templates';
 import { templateParams } from '@/lib/templates/catalog';
+import { mergedWhatsAppTemplates } from '@/lib/templates/custom';
 import type { ChannelConfig } from '@/lib/channels/types';
 
 type Job = { id: string; workspace_id: string; customer_id: string; kind: Kind; channel: string; meta: Record<string, unknown> };
@@ -22,6 +23,7 @@ export async function runLifecycle(limit = 50): Promise<{ sent: number; failed: 
     .order('send_at', { ascending: true }).limit(limit);
 
   const bindingCache = new Map<string, Record<string, unknown>>();
+  const tplCache = new Map<string, Record<string, import('@/lib/templates/catalog').TemplateDef>>();
   let sent = 0, failed = 0;
 
   for (const job of (jobs ?? []) as Job[]) {
@@ -55,6 +57,13 @@ export async function runLifecycle(limit = 50): Promise<{ sent: number; failed: 
       quickReplies = [`reorder_yes:${job.customer_id}:${ctx.product}`, `reorder_no:${job.customer_id}`];
     }
     const tpl = templateParams(key, { ...ctx, entityFor: ctx.entityFor });
+    // Custom override: if the workspace uploaded its OWN template for this key, use
+    // its name/language/buttons (params stay from the built-in mapping for this kind).
+    if (tpl) {
+      let merged = tplCache.get(job.workspace_id);
+      if (!merged) { merged = await mergedWhatsAppTemplates(job.workspace_id); tplCache.set(job.workspace_id, merged); }
+      if (merged[key] && merged[key].name !== tpl.def.name) tpl.def = merged[key];
+    }
     let res;
     if (tpl) {
       if (!tpl.def.quickReply?.length) quickReplies = undefined;

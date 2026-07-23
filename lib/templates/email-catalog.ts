@@ -88,7 +88,22 @@ export function unpackEmail(content: string): { subject?: string; body: string }
   return { body: content };
 }
 
-/** Render a cold-email template to { subject, body } filling merge fields. */
+/** Render a specific email template (built-in or custom) filling merge fields. */
+export function renderEmailTemplate(t: Pick<EmailTemplate, 'subject' | 'body'>, ctx: EmailCtx): { subject: string; body: string } {
+  const map: Record<string, string> = {
+    '{{name}}': ctx.name || 'שלום',
+    '{{company}}': ctx.company || '',
+    '{{trigger}}': ctx.trigger || 'העשייה שלכם',
+    '{{value}}': ctx.value || 'לחסוך זמן ולהגדיל תוצאות',
+    '{{proof}}': ctx.proof || 'לקוח דומה ראה שיפור משמעותי תוך חודש.',
+    '{{cta}}': ctx.cta || 'מתי נוח לכם השבוע?',
+    '{{sender}}': ctx.sender || '',
+  };
+  const fill = (s: string) => Object.entries(map).reduce((acc, [k, v]) => acc.split(k).join(v), s).trim();
+  return { subject: fill(t.subject), body: fill(t.body) };
+}
+
+/** Render a cold-email template by key (built-in catalog only). */
 export function renderEmail(key: string, ctx: EmailCtx): { subject: string; body: string } | null {
   const t = getEmailTemplate(key);
   if (!t) return null;

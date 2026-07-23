@@ -68,6 +68,23 @@ create table if not exists lifecycle_jobs (
 );
 create index if not exists idx_lc_jobs_due on lifecycle_jobs(status, send_at);
 
+-- Custom, user-uploaded templates — the workspace defines its OWN templates for
+-- any message type instead of (or on top of) our built-in catalogs. `definition`
+-- holds the shape per kind (whatsapp: TemplateDef · email: {subject,body,...}).
+-- A custom row with the same key as a built-in OVERRIDES it in the merged view.
+create table if not exists custom_templates (
+  id uuid primary key default uuid_generate_v4(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  kind text not null,                         -- 'whatsapp' | 'email'
+  key text not null,                          -- logical key (overrides a built-in with same key)
+  definition jsonb not null,                  -- the template shape (per kind)
+  active boolean default true,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (workspace_id, kind, key)
+);
+create index if not exists idx_custom_tpl on custom_templates(workspace_id, kind, active);
+
 -- Canned / quick replies — instant FAQ answers to common INBOUND inquiries
 -- (price/hours/address/availability). In-window free text → no Meta template needed.
 -- Custom rows here override/extend the code defaults in lib/canned/catalog.ts.
@@ -119,8 +136,10 @@ alter table lifecycle_jobs      enable row level security;
 alter table bot_links           enable row level security;
 alter table otp_codes           enable row level security;
 alter table canned_replies      enable row level security;
+alter table custom_templates    enable row level security;
 do $$ begin
   create policy "auth all canned" on canned_replies for all to authenticated using (true) with check (true);
+  create policy "auth all custom_tpl" on custom_templates for all to authenticated using (true) with check (true);
   create policy "auth all lc_customers" on lifecycle_customers for all to authenticated using (true) with check (true);
   create policy "auth all appointments" on appointments for all to authenticated using (true) with check (true);
   create policy "auth all purchases"    on purchases for all to authenticated using (true) with check (true);

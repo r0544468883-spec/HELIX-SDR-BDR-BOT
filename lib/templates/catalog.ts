@@ -238,3 +238,16 @@ export function registrationPayload(def: TemplateDef, appUrl: string): Record<st
 export function allRegistrationPayloads(appUrl: string): Record<string, unknown>[] {
   return Object.values(TEMPLATES).map((d) => registrationPayload(d, appUrl));
 }
+
+/** Registration payloads for an explicit list of defs (built-in ∪ custom). */
+export function registrationPayloadsFor(defs: TemplateDef[], appUrl: string): Record<string, unknown>[] {
+  return defs.map((d) => registrationPayload(d, appUrl));
+}
+
+/** Generic params from a def + a flat context (used for custom templates whose keys
+ *  aren't in the built-in templateParams map): fills {{n}} in declared order. */
+export function paramsFromContext(def: TemplateDef, ctx: Record<string, string | undefined>): string[] {
+  // ctx keys are matched to def.params by INDEX via ctx['1'], ctx['2']… or by the
+  // param's own label; simplest contract: caller passes ctx['1']..ctx['n'].
+  return def.params.map((_, i) => ctx[String(i + 1)] ?? '');
+}

@@ -6,7 +6,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/helix/supabase';
 import { createWhatsAppTemplate } from '@/lib/channels/whatsapp';
-import { allRegistrationPayloads } from '@/lib/templates/catalog';
+import { registrationPayloadsFor } from '@/lib/templates/catalog';
+import { mergedWhatsAppTemplates } from '@/lib/templates/custom';
 import type { ChannelConfig } from '@/lib/channels/types';
 
 export const runtime = 'nodejs';
@@ -28,8 +29,10 @@ export async function POST(request: NextRequest) {
   const wabaId = config.waba_id as string | undefined;
   if (!wabaId) return NextResponse.json({ error: 'waba_id missing in channel_bindings config (add it to register templates)' }, { status: 400 });
 
+  // Register built-in ∪ this workspace's custom WhatsApp templates.
+  const merged = Object.values(await mergedWhatsAppTemplates(workspaceId));
   const results: { name: unknown; ok: boolean; status?: string; error?: string }[] = [];
-  for (const payload of allRegistrationPayloads(appUrl)) {
+  for (const payload of registrationPayloadsFor(merged, appUrl)) {
     const r = await createWhatsAppTemplate(config, wabaId, payload);
     results.push({ name: payload.name, ok: r.ok, status: r.status, error: r.error });
   }

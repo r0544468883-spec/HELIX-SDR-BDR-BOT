@@ -4,7 +4,8 @@
 //   template ∈ cold_opener | bump | value | breakup
 import { NextRequest, NextResponse } from 'next/server';
 import { enqueueApproval } from '@/lib/helix/notify';
-import { renderEmail, packEmail } from '@/lib/templates/email-catalog';
+import { renderEmailTemplate, packEmail } from '@/lib/templates/email-catalog';
+import { mergedEmailTemplates } from '@/lib/templates/custom';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,8 +16,10 @@ export async function POST(request: NextRequest) {
   if (!workspaceId || !b?.to || !b?.template) {
     return NextResponse.json({ error: 'workspace_id, to, template required' }, { status: 400 });
   }
-  const rendered = renderEmail(b.template, b.ctx ?? {});
-  if (!rendered) return NextResponse.json({ error: 'unknown template' }, { status: 400 });
+  // Resolve from built-in ∪ custom email templates (custom overrides by key).
+  const tpl = (await mergedEmailTemplates(workspaceId))[b.template];
+  if (!tpl) return NextResponse.json({ error: 'unknown template' }, { status: 400 });
+  const rendered = renderEmailTemplate(tpl, b.ctx ?? {});
 
   const id = await enqueueApproval({
     workspaceId, kind: 'send_message',

@@ -9,8 +9,7 @@ import { scheduleAppointment, scheduleRenewal, scheduleReplenishment, scheduleBi
 import { sendOtp } from '@/lib/lifecycle/otp';
 import { listCanned, upsertCanned } from '@/lib/canned/store';
 import { sendWhatsApp } from '@/lib/channels/whatsapp';
-import { TEMPLATES } from '@/lib/templates/catalog';
-import { EMAIL_TEMPLATES } from '@/lib/templates/email-catalog';
+import { mergedWhatsAppTemplates, mergedEmailTemplates, listCustom } from '@/lib/templates/custom';
 import type { ChannelConfig } from '@/lib/channels/types';
 
 export type BotChannel = 'whatsapp' | 'telegram' | 'email';
@@ -23,7 +22,7 @@ const HELP = [
   '• "יום הולדת לרקסי (של דנה 0501234567) בתאריך 2026-08-12"',
   '• "ייבא לקוחות" ואז הדבק שורות CSV: שם,טלפון,אימייל,תאריך_לידה,שם_חיה',
   '• "שלח קוד אימות ל-0501234567" — OTP בוואטסאפ',
-  '• "תבניות" — תבניות WhatsApp · "תבניות מייל" — רצף מיילים קרים',
+  '• "תבניות" — תבניות WhatsApp · "תבניות מייל" — רצף מיילים (מובנות + שלך; העלאה: /api/templates/custom)',
   '• "תשובות שמורות" — FAQ שנענה אוטומטית לפניות · "הוסף תשובה מחיר: ..." · "שלח תשובה מחיר ל-05..."',
   '• "סטטוס" / "מה יש היום" — סיכום תזכורות ותורים',
 ].join('\n');
@@ -115,19 +114,22 @@ export async function handleOperatorCommand(input: { workspaceId: string; text: 
   if (/^(ייבא|import|העלה לקוחות)/i.test(t)) {
     return 'שלח/י את הלקוחות כשורות CSV (כותרת ראשונה):\nname,phone,email,birthday,pet_name,pet_birthday\nאו קרא/י ל-POST /api/lifecycle/import. אחרי הייבוא ימי-ההולדת יתוזמנו אוטומטית.';
   }
-  // ── תבניות / templates ── list the approved-template catalog.
+  // ── תבניות / templates ── list the approved-template catalog (built-in + custom).
+  if (/^(תבניות מייל|מיילים קרים|cold email|email templates)/i.test(t)) {
+    const merged = Object.values(await mergedEmailTemplates(workspaceId)).sort((a, b) => a.step - b.step);
+    const lines = merged.map((e) => `${e.step}. *${e.key}* (${e.title}) — נושא: "${e.subject}"`);
+    return ['✉️ תבניות מייל (מובנות + שלך):', ...lines, '', 'העלאת תבנית משלך: POST /api/templates/custom {kind:"email",key,definition:{title,step,subject,body}}'].join('\n');
+  }
   if (/^(תבניות|templates|רשימת תבניות)/i.test(t)) {
-    const byCat = Object.values(TEMPLATES).reduce<Record<string, string[]>>((acc, d) => {
-      (acc[d.category] ||= []).push(d.name); return acc;
+    const merged = Object.values(await mergedWhatsAppTemplates(workspaceId));
+    const custom = await listCustom(workspaceId, 'whatsapp');
+    const customKeys = new Set(custom.map((c) => (c as { key: string }).key));
+    const byCat = merged.reduce<Record<string, string[]>>((acc, d) => {
+      const label = customKeys.has(d.name) || custom.some((c) => (c as { definition?: { name?: string } }).definition?.name === d.name) ? `${d.name}*` : d.name;
+      (acc[d.category] ||= []).push(label); return acc;
     }, {});
     const lines = Object.entries(byCat).map(([cat, names]) => `• ${cat}: ${names.join(', ')}`);
-    return ['📩 תבניות WhatsApp מאושרות (יזום, מחוץ לחלון):', ...lines, '', 'לרישום מחדש: POST /api/templates/sync'].join('\n');
-  }
-
-  // ── תבניות מייל קר ── list the cold-email sequence.
-  if (/^(תבניות מייל|מיילים קרים|cold email|email templates)/i.test(t)) {
-    const lines = EMAIL_TEMPLATES.map((e) => `${e.step}. *${e.key}* (${e.title}) — נושא: "${e.subject}"`);
-    return ['✉️ רצף מיילים קרים:', ...lines, '', 'שליחה: POST /api/outreach/cold-email {to, template, ctx} → נכנס לאישור.'].join('\n');
+    return ['📩 תבניות WhatsApp (מובנות + שלך, * = מותאם):', ...lines, '', 'העלאת תבנית משלך: POST /api/templates/custom · רישום ב-WABA: POST /api/templates/sync'].join('\n');
   }
 
   // ── תשובות שמורות / canned ── list / add / send.
