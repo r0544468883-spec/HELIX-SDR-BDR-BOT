@@ -40,10 +40,25 @@ export async function runLifecycle(limit = 50): Promise<{ sent: number; failed: 
     // Proactive by nature → prefer an APPROVED template (compliant out-of-window).
     // If the template isn't approved yet, fall back to free-text (works in-window).
     const ctx = renderContext(customer, meta);
-    const tpl = templateParams(job.kind, { ...ctx, entityFor: ctx.entityFor });
+    // Prefer QUICK-REPLY templates for actions the customer can take in one tap
+    // (confirm/cancel appointment, reorder). The payload is self-describing so the
+    // button tap lands on the webhook ready to process — no public page round-trip.
+    const isAppt = job.kind === 'appt_reminder' || job.kind === 'appt_sameday';
+    const isReplenish = job.kind === 'replenish';
+    let key: string = job.kind;
+    let quickReplies: string[] | undefined;
+    if (isAppt && ctx.token) {
+      key = 'appt_confirm_qr';
+      quickReplies = [`confirm:${ctx.token}`, `cancel:${ctx.token}`];
+    } else if (isReplenish) {
+      key = 'reorder_qr';
+      quickReplies = [`reorder_yes:${job.customer_id}:${ctx.product}`, `reorder_no:${job.customer_id}`];
+    }
+    const tpl = templateParams(key, { ...ctx, entityFor: ctx.entityFor });
     let res;
     if (tpl) {
-      res = await sendWhatsAppTemplate(config as ChannelConfig, c.phone as string, tpl.def.name, tpl.def.language, tpl.params, tpl.def.urlButton ? ctx.token : undefined);
+      if (!tpl.def.quickReply?.length) quickReplies = undefined;
+      res = await sendWhatsAppTemplate(config as ChannelConfig, c.phone as string, tpl.def.name, tpl.def.language, tpl.params, tpl.def.urlButton ? ctx.token : undefined, quickReplies);
       if (!res.ok && /template|not found|does not exist|132001|param/i.test(res.error ?? '')) {
         res = await sendWhatsApp(config as ChannelConfig, c.phone as string, renderTemplate(job.kind, customer, meta, appUrl));
       }

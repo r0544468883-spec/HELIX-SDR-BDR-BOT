@@ -36,6 +36,7 @@ export async function sendWhatsAppTemplate(
   language: string,
   params: string[],
   urlButtonParam?: string,
+  quickReplyPayloads?: string[],
 ): Promise<SendResult> {
   const token = config.access_token as string | undefined;
   const phoneId = config.phone_number_id as string | undefined;
@@ -47,6 +48,10 @@ export async function sendWhatsAppTemplate(
   if (urlButtonParam) {
     components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: urlButtonParam }] });
   }
+  // QUICK_REPLY buttons: each carries a self-describing payload the webhook reads back.
+  (quickReplyPayloads ?? []).forEach((payload, i) => {
+    components.push({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload }] });
+  });
   try {
     const res = await fetch(`${GRAPH}/${phoneId}/messages`, {
       method: 'POST',

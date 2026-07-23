@@ -68,6 +68,19 @@ create table if not exists lifecycle_jobs (
 );
 create index if not exists idx_lc_jobs_due on lifecycle_jobs(status, send_at);
 
+-- One-time passcodes for WhatsApp AUTHENTICATION templates (customer verification).
+create table if not exists otp_codes (
+  id uuid primary key default uuid_generate_v4(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  phone text not null,
+  code text not null,
+  expires_at timestamptz not null,
+  consumed boolean default false,
+  attempts int default 0,
+  created_at timestamptz default now()
+);
+create index if not exists idx_otp_lookup on otp_codes(workspace_id, phone, consumed);
+
 -- Operator↔workspace link: which chat identity (phone / telegram chat_id / email)
 -- is an OPERATOR of a workspace, so the bot routes their messages to operator
 -- commands (schedule / import / stats) instead of the lead auto-reply flow.
@@ -88,6 +101,7 @@ alter table purchases           enable row level security;
 alter table coupons             enable row level security;
 alter table lifecycle_jobs      enable row level security;
 alter table bot_links           enable row level security;
+alter table otp_codes           enable row level security;
 do $$ begin
   create policy "auth all lc_customers" on lifecycle_customers for all to authenticated using (true) with check (true);
   create policy "auth all appointments" on appointments for all to authenticated using (true) with check (true);
@@ -95,4 +109,5 @@ do $$ begin
   create policy "auth all coupons"      on coupons for all to authenticated using (true) with check (true);
   create policy "auth all lc_jobs"      on lifecycle_jobs for all to authenticated using (true) with check (true);
   create policy "auth all bot_links"    on bot_links for all to authenticated using (true) with check (true);
+  create policy "auth all otp_codes"    on otp_codes for all to authenticated using (true) with check (true);
 exception when duplicate_object then null; end $$;

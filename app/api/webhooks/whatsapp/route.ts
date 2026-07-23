@@ -8,6 +8,7 @@ import { resolveWorkspaceForChannel } from '@/lib/helix/workspace';
 import { resolveOperatorWorkspace, handleOperatorCommand } from '@/lib/bot/operator';
 import { sendWhatsApp } from '@/lib/channels/whatsapp';
 import { supabaseAdmin } from '@/lib/helix/supabase';
+import { applyButtonAction } from '@/lib/lifecycle/actions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,7 +30,11 @@ interface WaWebhook {
     changes?: {
       value?: {
         metadata?: { phone_number_id?: string };
-        messages?: { from?: string; id?: string; type?: string; text?: { body?: string } }[];
+        messages?: {
+          from?: string; id?: string; type?: string; text?: { body?: string };
+          button?: { payload?: string; text?: string };
+          interactive?: { button_reply?: { id?: string } };
+        }[];
       };
     }[];
   }[];
@@ -43,8 +48,22 @@ export async function POST(request: NextRequest) {
         const value = change.value;
         const phoneNumberId = value?.metadata?.phone_number_id;
         for (const m of value?.messages ?? []) {
+          if (!m.from) continue;
+
+          // QUICK-REPLY button tap (template quick_reply / interactive) → self-describing
+          // payload → confirm/cancel appointment or reorder. No workspace lookup needed.
+          const payload = m.button?.payload ?? m.interactive?.button_reply?.id;
+          if (payload) {
+            const reply = await applyButtonAction(payload);
+            if (reply) {
+              const { data: b } = await supabaseAdmin().from('channel_bindings').select('config').eq('channel', 'whatsapp').limit(1).maybeSingle();
+              await sendWhatsApp((b?.config ?? {}) as Record<string, unknown>, m.from, reply);
+            }
+            continue;
+          }
+
           const text = m.text?.body;
-          if (!m.from || !text) continue; // skip non-text (media/status) for now
+          if (!text) continue; // skip non-text (media/status) for now
 
           // Is the sender a linked OPERATOR? → run operator commands, not the lead flow.
           const opWorkspace = await resolveOperatorWorkspace('whatsapp', m.from);

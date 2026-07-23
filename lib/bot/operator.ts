@@ -6,6 +6,7 @@
 import { supabaseAdmin } from '@/lib/helix/supabase';
 import { createLLM, CLAUDE_MODEL_FAST } from '@/lib/helix/llm';
 import { scheduleAppointment, scheduleRenewal, scheduleReplenishment, scheduleBirthday } from '@/lib/lifecycle/schedule';
+import { sendOtp } from '@/lib/lifecycle/otp';
 
 export type BotChannel = 'whatsapp' | 'telegram' | 'email';
 
@@ -16,6 +17,7 @@ const HELP = [
   '• "רכישה חוזרת ליוסי 0533334444 — מזון לכלבים, כל 30 יום"',
   '• "יום הולדת לרקסי (של דנה 0501234567) בתאריך 2026-08-12"',
   '• "ייבא לקוחות" ואז הדבק שורות CSV: שם,טלפון,אימייל,תאריך_לידה,שם_חיה',
+  '• "שלח קוד אימות ל-0501234567" — OTP בוואטסאפ',
   '• "סטטוס" / "מה יש היום" — סיכום תזכורות ותורים',
 ].join('\n');
 
@@ -105,6 +107,14 @@ export async function handleOperatorCommand(input: { workspaceId: string; text: 
   if (/(תזכורות|due).*(היום|today)|^תזכורות/i.test(t)) return due(workspaceId);
   if (/^(ייבא|import|העלה לקוחות)/i.test(t)) {
     return 'שלח/י את הלקוחות כשורות CSV (כותרת ראשונה):\nname,phone,email,birthday,pet_name,pet_birthday\nאו קרא/י ל-POST /api/lifecycle/import. אחרי הייבוא ימי-ההולדת יתוזמנו אוטומטית.';
+  }
+  // "שלח קוד אימות ל-05..." → OTP over WhatsApp.
+  if (/(קוד אימות|otp|שלח קוד)/i.test(t)) {
+    const phone = (t.match(/(\+?972\d{8,9}|0\d{8,9})/) || [])[0];
+    if (!phone) return 'למי לשלוח קוד אימות? כלול/י מספר טלפון.';
+    const e164 = phone.startsWith('0') ? '+972' + phone.slice(1) : phone.startsWith('+') ? phone : '+' + phone;
+    const r = await sendOtp(workspaceId, e164);
+    return r.ok ? `✅ נשלח קוד אימות ל-${e164}.` : `שגיאה בשליחת הקוד: ${r.error}`;
   }
 
   const p = await parseIntent(t);
