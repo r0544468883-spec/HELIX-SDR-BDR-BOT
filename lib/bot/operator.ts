@@ -7,6 +7,10 @@ import { supabaseAdmin } from '@/lib/helix/supabase';
 import { createLLM, CLAUDE_MODEL_FAST } from '@/lib/helix/llm';
 import { scheduleAppointment, scheduleRenewal, scheduleReplenishment, scheduleBirthday } from '@/lib/lifecycle/schedule';
 import { sendOtp } from '@/lib/lifecycle/otp';
+import { listCanned, upsertCanned } from '@/lib/canned/store';
+import { sendWhatsApp } from '@/lib/channels/whatsapp';
+import { TEMPLATES } from '@/lib/templates/catalog';
+import type { ChannelConfig } from '@/lib/channels/types';
 
 export type BotChannel = 'whatsapp' | 'telegram' | 'email';
 
@@ -18,6 +22,8 @@ const HELP = [
   '• "יום הולדת לרקסי (של דנה 0501234567) בתאריך 2026-08-12"',
   '• "ייבא לקוחות" ואז הדבק שורות CSV: שם,טלפון,אימייל,תאריך_לידה,שם_חיה',
   '• "שלח קוד אימות ל-0501234567" — OTP בוואטסאפ',
+  '• "תבניות" — רשימת תבניות WhatsApp מאושרות',
+  '• "תשובות שמורות" — FAQ שנענה אוטומטית לפניות · "הוסף תשובה מחיר: ..." · "שלח תשובה מחיר ל-05..."',
   '• "סטטוס" / "מה יש היום" — סיכום תזכורות ותורים',
 ].join('\n');
 
@@ -108,6 +114,41 @@ export async function handleOperatorCommand(input: { workspaceId: string; text: 
   if (/^(ייבא|import|העלה לקוחות)/i.test(t)) {
     return 'שלח/י את הלקוחות כשורות CSV (כותרת ראשונה):\nname,phone,email,birthday,pet_name,pet_birthday\nאו קרא/י ל-POST /api/lifecycle/import. אחרי הייבוא ימי-ההולדת יתוזמנו אוטומטית.';
   }
+  // ── תבניות / templates ── list the approved-template catalog.
+  if (/^(תבניות|templates|רשימת תבניות)/i.test(t)) {
+    const byCat = Object.values(TEMPLATES).reduce<Record<string, string[]>>((acc, d) => {
+      (acc[d.category] ||= []).push(d.name); return acc;
+    }, {});
+    const lines = Object.entries(byCat).map(([cat, names]) => `• ${cat}: ${names.join(', ')}`);
+    return ['📩 תבניות WhatsApp מאושרות (יזום, מחוץ לחלון):', ...lines, '', 'לרישום מחדש: POST /api/templates/sync'].join('\n');
+  }
+
+  // ── תשובות שמורות / canned ── list / add / send.
+  if (/^(הוסף תשובה|canned add|תשובה חדשה)/i.test(t)) {
+    // "הוסף תשובה <key>: <body>"
+    const m = t.match(/^(?:הוסף תשובה|canned add|תשובה חדשה)\s+(\S+)\s*[:：]\s*([\s\S]+)/i);
+    if (!m) return 'פורמט: "הוסף תשובה <מפתח>: <תוכן התשובה>"';
+    await upsertCanned(workspaceId, m[1], m[2].trim());
+    return `✅ נשמרה תשובה שמורה "${m[1]}".`;
+  }
+  if (/^(שלח תשובה|canned send)/i.test(t)) {
+    // "שלח תשובה <key> ל<phone>"
+    const key = (t.match(/(?:שלח תשובה|canned send)\s+(\S+)/i) || [])[1];
+    const phone = (t.match(/(\+?972\d{8,9}|0\d{8,9})/) || [])[0];
+    if (!key || !phone) return 'פורמט: "שלח תשובה <מפתח> ל-0501234567"';
+    const e164 = phone.startsWith('0') ? '+972' + phone.slice(1) : phone.startsWith('+') ? phone : '+' + phone;
+    const reply = (await listCanned(workspaceId)).find((c) => c.key === key);
+    if (!reply) return `לא נמצאה תשובה שמורה "${key}". לרשימה: "תשובות שמורות".`;
+    const { data: b } = await supabaseAdmin().from('channel_bindings').select('config').eq('workspace_id', workspaceId).eq('channel', 'whatsapp').maybeSingle();
+    const res = await sendWhatsApp((b?.config ?? {}) as ChannelConfig, e164, reply.body);
+    return res.ok ? `✅ נשלחה התשובה "${key}" ל-${e164}.` : `שגיאה: ${res.error}`;
+  }
+  if (/^(תשובות שמורות|canned|תשובות מהירות|faq)/i.test(t)) {
+    const list = await listCanned(workspaceId);
+    const lines = list.map((c) => `• *${c.key}* (${c.title}) — טריגרים: ${c.triggers.slice(0, 4).join('، ')}`);
+    return ['💬 תשובות שמורות (נענות אוטומטית לפניות נכנסות):', ...lines, '', 'הוספה: "הוסף תשובה <מפתח>: <תוכן>" · שליחה: "שלח תשובה <מפתח> ל-05..."'].join('\n');
+  }
+
   // "שלח קוד אימות ל-05..." → OTP over WhatsApp.
   if (/(קוד אימות|otp|שלח קוד)/i.test(t)) {
     const phone = (t.match(/(\+?972\d{8,9}|0\d{8,9})/) || [])[0];

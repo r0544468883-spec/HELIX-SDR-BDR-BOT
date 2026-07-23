@@ -8,6 +8,7 @@ import { enqueueApproval } from './notify';
 import { runExecutor } from './executor';
 import { classifyIntent, draftReply } from '@/lib/agent/inbound';
 import { recallSimilar, rememberExchange } from './memory';
+import { matchCannedForWorkspace } from '@/lib/canned/store';
 
 export interface InboundMessage {
   workspaceId: string;
@@ -50,14 +51,23 @@ export async function handleInboundMessage(msg: InboundMessage): Promise<void> {
     .eq('thread_id', threadId)
     .order('created_at', { ascending: true })
     .limit(12);
-  // Conversation Memory (RAG §3.3.6): ground the reply in how we answered similar messages.
-  const examples = await recallSimilar(msg.workspaceId, msg.text, 3);
-  const reply = await draftReply(
-    msg.text,
-    (history ?? []) as { direction: 'in' | 'out'; body: string }[],
-    intent,
-    examples.map((e) => ({ question: e.question, answer: e.answer })),
-  );
+  // 4a) Canned/quick reply — deterministic FAQ answer for common inquiries
+  // (price/hours/address/…). Fast, consistent, and free (no LLM). If it matches,
+  // use it verbatim; otherwise fall through to the grounded AI draft.
+  const canned = await matchCannedForWorkspace(msg.workspaceId, msg.text);
+  let reply: string | null;
+  if (canned) {
+    reply = canned.body;
+  } else {
+    // Conversation Memory (RAG §3.3.6): ground the reply in how we answered similar messages.
+    const examples = await recallSimilar(msg.workspaceId, msg.text, 3);
+    reply = await draftReply(
+      msg.text,
+      (history ?? []) as { direction: 'in' | 'out'; body: string }[],
+      intent,
+      examples.map((e) => ({ question: e.question, answer: e.answer })),
+    );
+  }
   if (!reply) return;
 
   // Learn from this exchange so future replies improve (not generic).

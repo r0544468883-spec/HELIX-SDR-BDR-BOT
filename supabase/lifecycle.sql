@@ -68,6 +68,22 @@ create table if not exists lifecycle_jobs (
 );
 create index if not exists idx_lc_jobs_due on lifecycle_jobs(status, send_at);
 
+-- Canned / quick replies — instant FAQ answers to common INBOUND inquiries
+-- (price/hours/address/availability). In-window free text → no Meta template needed.
+-- Custom rows here override/extend the code defaults in lib/canned/catalog.ts.
+create table if not exists canned_replies (
+  id uuid primary key default uuid_generate_v4(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  key text not null,                          -- 'price' | 'hours' | ...
+  title text,
+  body text not null,
+  triggers text[] default '{}',               -- keywords that match an inbound message
+  active boolean default true,
+  created_at timestamptz default now(),
+  unique (workspace_id, key)
+);
+create index if not exists idx_canned_ws on canned_replies(workspace_id, active);
+
 -- One-time passcodes for WhatsApp AUTHENTICATION templates (customer verification).
 create table if not exists otp_codes (
   id uuid primary key default uuid_generate_v4(),
@@ -102,7 +118,9 @@ alter table coupons             enable row level security;
 alter table lifecycle_jobs      enable row level security;
 alter table bot_links           enable row level security;
 alter table otp_codes           enable row level security;
+alter table canned_replies      enable row level security;
 do $$ begin
+  create policy "auth all canned" on canned_replies for all to authenticated using (true) with check (true);
   create policy "auth all lc_customers" on lifecycle_customers for all to authenticated using (true) with check (true);
   create policy "auth all appointments" on appointments for all to authenticated using (true) with check (true);
   create policy "auth all purchases"    on purchases for all to authenticated using (true) with check (true);

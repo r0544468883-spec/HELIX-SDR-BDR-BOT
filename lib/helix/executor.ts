@@ -5,6 +5,7 @@ import { supabaseAdmin } from './supabase';
 import { sendEmail } from '@/lib/channels/email';
 import { sendWhatsApp } from '@/lib/channels/whatsapp';
 import { sendTelegram } from '@/lib/channels/telegram';
+import { sendMessenger } from '@/lib/channels/messenger';
 import type { SendResult } from '@/lib/channels/types';
 
 // §30A: cold WhatsApp/SMS in Israel is blocked. Approvals for those channels should never
@@ -34,6 +35,8 @@ async function dispatch(row: QueueRow, config: Record<string, unknown>): Promise
       return sendWhatsApp(config, to, content);
     case 'telegram':
       return sendTelegram({ ...config, chat_id: to }, content);
+    case 'messenger':
+      return sendMessenger(config, to, content);
     default:
       return { ok: false, error: `no_executor_for_${row.channel}` };
   }
