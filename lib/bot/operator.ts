@@ -10,6 +10,7 @@ import { sendOtp } from '@/lib/lifecycle/otp';
 import { listCanned, upsertCanned } from '@/lib/canned/store';
 import { sendWhatsApp } from '@/lib/channels/whatsapp';
 import { TEMPLATES } from '@/lib/templates/catalog';
+import { EMAIL_TEMPLATES } from '@/lib/templates/email-catalog';
 import type { ChannelConfig } from '@/lib/channels/types';
 
 export type BotChannel = 'whatsapp' | 'telegram' | 'email';
@@ -22,7 +23,7 @@ const HELP = [
   '• "יום הולדת לרקסי (של דנה 0501234567) בתאריך 2026-08-12"',
   '• "ייבא לקוחות" ואז הדבק שורות CSV: שם,טלפון,אימייל,תאריך_לידה,שם_חיה',
   '• "שלח קוד אימות ל-0501234567" — OTP בוואטסאפ',
-  '• "תבניות" — רשימת תבניות WhatsApp מאושרות',
+  '• "תבניות" — תבניות WhatsApp · "תבניות מייל" — רצף מיילים קרים',
   '• "תשובות שמורות" — FAQ שנענה אוטומטית לפניות · "הוסף תשובה מחיר: ..." · "שלח תשובה מחיר ל-05..."',
   '• "סטטוס" / "מה יש היום" — סיכום תזכורות ותורים',
 ].join('\n');
@@ -121,6 +122,12 @@ export async function handleOperatorCommand(input: { workspaceId: string; text: 
     }, {});
     const lines = Object.entries(byCat).map(([cat, names]) => `• ${cat}: ${names.join(', ')}`);
     return ['📩 תבניות WhatsApp מאושרות (יזום, מחוץ לחלון):', ...lines, '', 'לרישום מחדש: POST /api/templates/sync'].join('\n');
+  }
+
+  // ── תבניות מייל קר ── list the cold-email sequence.
+  if (/^(תבניות מייל|מיילים קרים|cold email|email templates)/i.test(t)) {
+    const lines = EMAIL_TEMPLATES.map((e) => `${e.step}. *${e.key}* (${e.title}) — נושא: "${e.subject}"`);
+    return ['✉️ רצף מיילים קרים:', ...lines, '', 'שליחה: POST /api/outreach/cold-email {to, template, ctx} → נכנס לאישור.'].join('\n');
   }
 
   // ── תשובות שמורות / canned ── list / add / send.

@@ -12,7 +12,7 @@ import { matchCannedForWorkspace } from '@/lib/canned/store';
 
 export interface InboundMessage {
   workspaceId: string;
-  channel: 'whatsapp' | 'telegram' | 'messenger';
+  channel: 'whatsapp' | 'telegram' | 'messenger' | 'linkedin';
   from: string;          // lead's phone / chat_id / psid
   text: string;
   externalId?: string;

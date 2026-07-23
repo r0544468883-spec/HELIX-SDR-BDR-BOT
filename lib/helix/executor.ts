@@ -6,6 +6,7 @@ import { sendEmail } from '@/lib/channels/email';
 import { sendWhatsApp } from '@/lib/channels/whatsapp';
 import { sendTelegram } from '@/lib/channels/telegram';
 import { sendMessenger } from '@/lib/channels/messenger';
+import { unpackEmail } from '@/lib/templates/email-catalog';
 import type { SendResult } from '@/lib/channels/types';
 
 // §30A: cold WhatsApp/SMS in Israel is blocked. Approvals for those channels should never
@@ -29,8 +30,10 @@ async function dispatch(row: QueueRow, config: Record<string, unknown>): Promise
   if (row.channel && BLOCKED_COLD.has(row.channel)) return { ok: false, error: 'channel_blocked_by_compliance' };
 
   switch (row.channel) {
-    case 'email':
-      return sendEmail({ ...config, recipients: [to] }, content);
+    case 'email': {
+      const { subject, body } = unpackEmail(content);
+      return sendEmail({ ...config, recipients: [to], ...(subject ? { subject } : {}) }, body);
+    }
     case 'whatsapp':
       return sendWhatsApp(config, to, content);
     case 'telegram':
@@ -55,6 +58,10 @@ export async function runExecutor(limit = 25): Promise<{ executed: number; faile
   let executed = 0;
   let failed = 0;
   for (const row of (rows ?? []) as QueueRow[]) {
+    // LinkedIn has no send API — leave it 'approved' for the extension outbox to pull
+    // and deliver via the user's session (see /api/linkedin/outbox).
+    if (row.channel === 'linkedin') continue;
+
     // Load the workspace's sender config for this channel.
     const { data: binding } = await db
       .from('channel_bindings')
