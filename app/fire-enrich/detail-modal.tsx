@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { CSVRow, EnrichmentField, RowEnrichmentResult } from '@/lib/types';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ExternalLink, Mail, CheckCircle, XCircle, ChevronDown } from 'lucide-react';
 
 interface DetailModalProps {
@@ -44,10 +44,10 @@ export function DetailModal({ isOpen, onClose, row, result, fields, emailColumn 
   const websiteUrl = typeof websiteUrlValue === 'string' ? websiteUrlValue : '';
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden bg-white">
-        <DialogHeader className="bg-gradient-to-r from-gray-900 to-gray-800 text-white -m-6 mb-0 p-4 rounded-t-lg">
-          <DialogTitle className="text-lg font-semibold">
+    <Sheet open={isOpen} onOpenChange={onClose}>
+      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto bg-white p-6">
+        <SheetHeader className="bg-gradient-to-r from-gray-900 to-gray-800 text-white -m-6 mb-0 p-4 rounded-b-lg">
+          <SheetTitle className="text-lg font-semibold text-white">
             <div>
               {companyName}
               {websiteUrl && (
@@ -62,8 +62,8 @@ export function DetailModal({ isOpen, onClose, row, result, fields, emailColumn 
                 </a>
               )}
             </div>
-          </DialogTitle>
-        </DialogHeader>
+          </SheetTitle>
+        </SheetHeader>
         
         <div className="overflow-y-auto max-h-[calc(80vh-100px)] mt-4">
           {/* Email and Basic Info */}
@@ -223,7 +223,7 @@ export function DetailModal({ isOpen, onClose, row, result, fields, emailColumn 
             </div>
           </details>
         </div>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }
