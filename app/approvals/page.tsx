@@ -1,6 +1,7 @@
 // HITL Approval Queue (spec §Screen 7) — the dashboard side of notify-and-approve.
 import { supabaseAdmin } from '@/lib/helix/supabase';
 import { ApprovalItem } from './approval-item';
+import { BotLinkCard } from './bot-link-card';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,7 @@ export default async function ApprovalsPage() {
       <p style={{ color: '#6b7280', marginBottom: 24, fontSize: 14 }}>
         פעולות שממתינות לאישורך לפני שליחה. אישור שולח מיד; דחייה מבטלת.
       </p>
+      <BotLinkCard />
       {items.length === 0 ? (
         <div style={{ textAlign: 'center', color: '#9ca3af', padding: 48 }}>
           אין פריטים ממתינים כרגע. כשיגיע משהו — תקבל התראה בטלגרם/מייל.
