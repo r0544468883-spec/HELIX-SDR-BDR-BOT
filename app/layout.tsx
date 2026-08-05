@@ -13,11 +13,9 @@ const robotoMono = Roboto_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Fire Enrich v2",
-  description: "Enrich your data with AI-powered insights",
-  icons: {
-    icon: "/favicon.png",
-  },
+  title: "HELIX SDR",
+  description: "סוכן SDR/BDR — העשרת לידים ופנייה חכמה, own-first, בעברית",
+  // Favicon comes from app/icon.svg (green HELIX circle). No Firecrawl favicon.
 };
 
 export default function RootLayout({
