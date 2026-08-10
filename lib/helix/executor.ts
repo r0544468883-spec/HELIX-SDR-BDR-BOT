@@ -80,3 +80,15 @@ export async function runExecutor(limit = 25): Promise<{ executed: number; faile
   }
   return { executed, failed };
 }
+
+/**
+ * Autopilot path: approve one queued action and dispatch it immediately.
+ * Used when the autonomy switch resolves 'autopilot' for an outbound feature
+ * (which only happens with an explicit risk_ack — the guard enforces that).
+ * LinkedIn is skipped by runExecutor and stays 'approved' for the extension outbox.
+ */
+export async function approveAndRun(approvalId: string): Promise<void> {
+  const db = supabaseAdmin();
+  await db.from('approval_queue').update({ status: 'approved' }).eq('id', approvalId).eq('status', 'pending');
+  await runExecutor();
+}

@@ -6,6 +6,9 @@ import { runWaterfall } from '@/lib/waterfall/orchestrator';
 import type { FieldName, WaterfallInput } from '@/lib/waterfall/types';
 import { draftOutreach } from '@/lib/agent/message';
 import { enqueueApproval } from '@/lib/helix/notify';
+import { approveAndRun } from '@/lib/helix/executor';
+import { resolveMode } from '@/lib/autonomy/resolve';
+import { adminStore } from '@/lib/autonomy/store';
 
 export const runtime = 'nodejs';
 
@@ -47,8 +50,15 @@ export async function POST(request: NextRequest) {
       channel,
     });
 
-    // 3) Enqueue for approval + fire the per-event notification to the user.
+    // 3) Route through the autonomy switch. Cold outreach never just "displays"
+    //    (the endpoint's job is to queue an action), so advisor collapses to
+    //    'approve' — the safe baseline. 'autopilot' (send immediately) is reached
+    //    ONLY when sdr.outreach is explicitly set to autopilot with risk_ack=true;
+    //    the guard downgrades otherwise. trust_level alone never auto-sends cold.
     const composed = draft.subject ? `נושא: ${draft.subject}\n\n${draft.body}` : draft.body;
+    const resolved = await resolveMode(adminStore(), workspaceId, 'sdr.outreach');
+    const mode: 'approve' | 'autopilot' = resolved === 'autopilot' ? 'autopilot' : 'approve';
+
     const approvalId = await enqueueApproval({
       workspaceId,
       kind: 'send_message',
@@ -58,9 +68,18 @@ export async function POST(request: NextRequest) {
       channel,                // how the action is executed to the lead
     });
 
+    // Autopilot: approve + dispatch now. Otherwise it waits for the user's ✓.
+    let autopilotSent = false;
+    if (mode === 'autopilot' && approvalId) {
+      await approveAndRun(approvalId);
+      autopilotSent = true;
+    }
+
     return NextResponse.json({
       ok: true,
       approvalId,
+      mode,                          // 'approve' (awaiting ✓) | 'autopilot' (sent)
+      autopilotSent,
       draft,
       enrichment: enrich.results,
       unresolved: enrich.unresolved,
