@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runWaterfall } from '@/lib/waterfall/orchestrator';
 import type { FieldName, WaterfallInput } from '@/lib/waterfall/types';
-import { composeOutreach } from '@/lib/agents/sdr/department-chief';
+import { composeOutreach, composeFollowup, scoreIcp, selectChannel, type Channel } from '@/lib/agents/sdr/department-chief';
 import { enqueueApproval } from '@/lib/helix/notify';
 import { approveAndRun } from '@/lib/helix/executor';
 import { resolveMode } from '@/lib/autonomy/resolve';
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { workspaceId, offer, recipient } = body;
     const input: WaterfallInput = body.input ?? {};
-    const channel: 'email' | 'whatsapp' | 'telegram' = body.channel ?? 'email';
+    const requestedChannel: Channel | undefined = body.channel;
     const language: 'he' | 'en' = body.language ?? 'he';
 
     if (!workspaceId || !offer || !recipient) {
@@ -37,8 +37,33 @@ export async function POST(request: NextRequest) {
     });
     const f = (name: FieldName) => enrich.results.find((r) => r.field === name)?.value ?? undefined;
 
+    const facts = [
+      input.fullName && `שם: ${input.fullName}`,
+      body.title && `תפקיד: ${body.title}`,
+      (f('company_name') ?? input.companyName) && `חברה: ${f('company_name') ?? input.companyName}`,
+      f('industry') && `תעשייה: ${f('industry')}`,
+      f('tech_stack') && `טכנולוגיה: ${f('tech_stack')}`,
+    ].filter(Boolean).join('\n');
+
+    // 1b) ICP gate — if the workspace defined an ICP, qualify the lead first; a poor
+    //     fit is skipped (no draft, no send) instead of burning an outreach on it.
+    if (body.icp) {
+      const icp = await scoreIcp({ facts, icp: body.icp, offer }).catch(() => null);
+      if (icp && !icp.worthContacting) {
+        return NextResponse.json({ ok: true, skipped: true, reason: 'icp_mismatch', icp, enrichment: enrich.results });
+      }
+    }
+
+    // 1c) Channel selector — use the requested channel, else pick the best compliant
+    //     first-touch channel (cold WhatsApp/Telegram are blocked by the selector).
+    const channel: Channel =
+      requestedChannel ??
+      (await selectChannel({ facts, available: ['email', 'linkedin'], language }).catch(() => null))?.channel ??
+      'email';
+
     // 2) Draft via the drafting department: Strategist → Writer → Critic → Editor.
-    const draft = await composeOutreach({
+    //    Follow-up mode reuses the same team with the prior message + outcome.
+    const draftInput = {
       fullName: input.fullName,
       title: body.title,
       company: f('company_name') ?? input.companyName,
@@ -48,7 +73,10 @@ export async function POST(request: NextRequest) {
       offer,
       language,
       channel,
-    });
+    };
+    const draft = body.followup?.priorMessage
+      ? await composeFollowup({ ...draftInput, priorMessage: body.followup.priorMessage, outcome: body.followup.outcome ?? 'אין תגובה עדיין' })
+      : await composeOutreach(draftInput);
 
     // 3) Route through the autonomy switch. Cold outreach never just "displays"
     //    (the endpoint's job is to queue an action), so advisor collapses to

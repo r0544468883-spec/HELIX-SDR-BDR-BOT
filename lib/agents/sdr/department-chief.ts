@@ -15,6 +15,10 @@ import { revise } from './roles/reviser';
 import { draftOutreach, type Draft, type DraftInput } from '@/lib/agent/message';
 import type { OutreachReview } from './contract';
 
+// Re-exported so callers wire the whole department from one module.
+export { scoreIcp, type IcpScore } from './roles/icp-scorer';
+export { selectChannel, type Channel, type ChannelChoice } from './roles/channel-selector';
+
 export async function verifyEnrichments(
   results: Record<string, EnrichmentResult>,
 ): Promise<Record<string, EnrichmentResult>> {
@@ -68,32 +72,17 @@ const composeText = (d: { subject?: string; body: string }): string =>
 // improved draft plus the final send-review, so the route enqueues better copy and
 // the autonomy gate has a verdict in hand. Best-effort: any agent failing falls
 // back to the previous step's output (never worse than today's single-shot draft).
-export async function composeOutreach(
-  input: DraftInput,
+// Shared Critic→Editor loop: critique the draft; if fixable or too AI-sounding,
+// the Editor revises once (fix feedback + humanize), then re-review. Used by both
+// first-touch and follow-up so the whole team runs on every outbound message.
+async function refineAndReview(
+  initial: Draft,
+  channel: string,
+  language: 'he' | 'en',
 ): Promise<Draft & { review: OutreachReview }> {
-  const language = input.language ?? 'he';
-  const channel = input.channel ?? 'email';
-
-  // 1) Strategist — choose the strongest angle + the one hook worth using.
-  const facts = [
-    input.fullName && `שם: ${input.fullName}`,
-    input.title && `תפקיד: ${input.title}`,
-    input.company && `חברה: ${input.company}`,
-    input.industry && `תעשייה: ${input.industry}`,
-    input.techStack && `טכנולוגיה: ${input.techStack}`,
-  ].filter(Boolean).join('\n');
-  const strategy = await strategize({ facts, hooks: input.hooks, offer: input.offer, channel, language }).catch(() => null);
-
-  // 2) Writer — draft, guided by the brief and the single chosen hook.
-  let draft = await draftOutreach({
-    ...input,
-    brief: strategy?.brief,
-    hooks: strategy?.chosenHook ? [strategy.chosenHook] : input.hooks,
-  });
-
-  // 3) Critic — find what's wrong. 4) Editor — revise once if fixable or too AI-sounding.
+  let draft = initial;
   let review = await critiqueOutreach(composeText(draft), channel).catch(() => null);
-  const needsRevise = (review?.verdict === 'revise') || draft.aiScore > 60;
+  const needsRevise = review?.verdict === 'revise' || draft.aiScore > 60;
   if (needsRevise) {
     const feedback = [...(review?.risks ?? []), draft.aiScore > 60 ? 'נשמע מלאכותי מדי — הפוך לאנושי וטבעי' : ''];
     const revised = await revise({ subject: draft.subject, body: draft.body }, feedback, language, channel).catch(() => null);
@@ -102,6 +91,50 @@ export async function composeOutreach(
       review = await critiqueOutreach(composeText(draft), channel).catch(() => review);
     }
   }
-
   return { ...draft, review: review ?? HELD_OUTREACH };
+}
+
+function factsOf(input: DraftInput): string {
+  return [
+    input.fullName && `שם: ${input.fullName}`,
+    input.title && `תפקיד: ${input.title}`,
+    input.company && `חברה: ${input.company}`,
+    input.industry && `תעשייה: ${input.industry}`,
+    input.techStack && `טכנולוגיה: ${input.techStack}`,
+  ].filter(Boolean).join('\n');
+}
+
+export async function composeOutreach(input: DraftInput): Promise<Draft & { review: OutreachReview }> {
+  const language = input.language ?? 'he';
+  const channel = input.channel ?? 'email';
+
+  // 1) Strategist — choose the strongest angle + the one hook worth using.
+  const strategy = await strategize({ facts: factsOf(input), hooks: input.hooks, offer: input.offer, channel, language }).catch(() => null);
+
+  // 2) Writer — draft, guided by the brief and the single chosen hook.
+  const draft = await draftOutreach({
+    ...input,
+    brief: strategy?.brief,
+    hooks: strategy?.chosenHook ? [strategy.chosenHook] : input.hooks,
+  });
+
+  // 3) Critic → 4) Editor.
+  return refineAndReview(draft, channel, language);
+}
+
+// Follow-up composer: given the prior message and what happened since, write the
+// next touch — value-adding, not a nagging "just checking in" — through the same
+// Writer → Critic → Editor team.
+export async function composeFollowup(
+  input: DraftInput & { priorMessage: string; outcome: string },
+): Promise<Draft & { review: OutreachReview }> {
+  const language = input.language ?? 'he';
+  const channel = input.channel ?? 'email';
+  const brief = `זו פנייה חוזרת (follow-up), לא פנייה ראשונה.
+ההודעה הקודמת ששלחנו:
+"""${(input.priorMessage || '').slice(0, 600)}"""
+מה שקרה מאז: ${input.outcome}.
+כתוב follow-up קצר ולא-נודניק שמוסיף ערך או זווית חדשה (תובנה, נתון, שאלה ממוקדת) — לא "רק מוודא שקיבלת". אם אין מה להוסיף, קצר עדיף.`;
+  const draft = await draftOutreach({ ...input, brief });
+  return refineAndReview(draft, channel, language);
 }
