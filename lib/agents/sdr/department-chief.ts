@@ -9,6 +9,8 @@
 // a legitimately-sourced value). Value is never invented — only confidence moves.
 import type { EnrichmentResult } from '@/lib/types';
 import { verifyField } from './roles/verifier';
+import { critiqueOutreach } from './roles/outreach-critic';
+import type { OutreachReview } from './contract';
 
 export async function verifyEnrichments(
   results: Record<string, EnrichmentResult>,
@@ -35,4 +37,22 @@ export async function verifyEnrichments(
     // 'yes' → keep the extractor's confidence as-is.
   });
   return out;
+}
+
+// Conservative default: an unreachable outreach Critic holds the send for human
+// approval — never auto-sends in the user's name un-reviewed.
+const HELD_OUTREACH: OutreachReview = {
+  verdict: 'revise',
+  safeToSend: false,
+  risks: ['המבקר לא זמין'],
+  note: 'המבקר לא זמין — לא שולח אוטומטית, ממתין לאישור אדם.',
+};
+
+// Review a drafted outbound message before the autonomy switch may auto-send it.
+export async function reviewOutreach(message: string, channel: string): Promise<OutreachReview> {
+  if (!message.trim()) {
+    return { verdict: 'block', safeToSend: false, risks: ['הודעה ריקה'], note: 'הודעה ריקה — אין מה לשלוח.' };
+  }
+  const review = await critiqueOutreach(message, channel).catch(() => null);
+  return review ?? HELD_OUTREACH;
 }

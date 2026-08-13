@@ -2,6 +2,7 @@
 // Closes the loop: approve → send the action to the lead → mark executed.
 // Reuses the workspace's own channel_bindings (bot/sender config).
 import { supabaseAdmin } from './supabase';
+import { reviewOutreach } from '@/lib/agents/sdr/department-chief';
 import { sendEmail } from '@/lib/channels/email';
 import { sendWhatsApp } from '@/lib/channels/whatsapp';
 import { sendTelegram } from '@/lib/channels/telegram';
@@ -87,8 +88,26 @@ export async function runExecutor(limit = 25): Promise<{ executed: number; faile
  * (which only happens with an explicit risk_ack — the guard enforces that).
  * LinkedIn is skipped by runExecutor and stays 'approved' for the extension outbox.
  */
-export async function approveAndRun(approvalId: string): Promise<void> {
+export async function approveAndRun(approvalId: string): Promise<{ sent: boolean; heldByCritic?: boolean; note?: string }> {
   const db = supabaseAdmin();
+
+  // Critic gate (§4b): before an autopilot send, an adversarial reviewer vets the
+  // outreach copy. A non-safe verdict keeps the item 'pending' for a human ✓
+  // instead of sending in the user's name; absent critic → held (safe default).
+  const { data: row } = await db
+    .from('approval_queue')
+    .select('body, channel')
+    .eq('id', approvalId)
+    .eq('status', 'pending')
+    .maybeSingle();
+  if (!row) return { sent: false };
+
+  const review = await reviewOutreach((row.body as string) ?? '', (row.channel as string) ?? 'email');
+  if (!review.safeToSend) {
+    return { sent: false, heldByCritic: true, note: review.note };
+  }
+
   await db.from('approval_queue').update({ status: 'approved' }).eq('id', approvalId).eq('status', 'pending');
   await runExecutor();
+  return { sent: true };
 }

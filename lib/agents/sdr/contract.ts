@@ -14,3 +14,14 @@ export type FieldVerification = {
   adjustedConfidence: number;  // 0..1 — the Critic's confidence, not the extractor's
   note: string;                // one short sentence
 };
+
+// Second Critic — reviews the drafted outreach message BEFORE the autonomy switch
+// may auto-send it in the user's name (the gray-path, same shape as OPS): spam/
+// compliance, fabricated claims about the prospect, creepy personalization, tone.
+export type OutreachVerdict = 'send' | 'revise' | 'block';
+export type OutreachReview = {
+  verdict: OutreachVerdict;
+  safeToSend: boolean;         // may the autopilot path send this with no human ✓?
+  risks: string[];
+  note: string;                // one blunt sentence
+};

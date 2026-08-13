@@ -68,18 +68,25 @@ export async function POST(request: NextRequest) {
       channel,                // how the action is executed to the lead
     });
 
-    // Autopilot: approve + dispatch now. Otherwise it waits for the user's ✓.
+    // Autopilot: the outreach Critic vets the copy, then approve + dispatch now.
+    // If the Critic holds it, the item stays 'pending' for the user's ✓.
     let autopilotSent = false;
+    let heldByCritic = false;
+    let heldNote: string | undefined;
     if (mode === 'autopilot' && approvalId) {
-      await approveAndRun(approvalId);
-      autopilotSent = true;
+      const r = await approveAndRun(approvalId);
+      autopilotSent = r.sent;
+      heldByCritic = !!r.heldByCritic;
+      heldNote = r.note;
     }
 
     return NextResponse.json({
       ok: true,
       approvalId,
-      mode,                          // 'approve' (awaiting ✓) | 'autopilot' (sent)
+      mode,                          // 'approve' (awaiting ✓) | 'autopilot' (sent unless held)
       autopilotSent,
+      heldByCritic,                  // autopilot send blocked by the outreach Critic → awaiting ✓
+      heldNote,
       draft,
       enrichment: enrich.results,
       unresolved: enrich.unresolved,
