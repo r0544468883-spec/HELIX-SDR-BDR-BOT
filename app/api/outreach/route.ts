@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runWaterfall } from '@/lib/waterfall/orchestrator';
 import type { FieldName, WaterfallInput } from '@/lib/waterfall/types';
-import { draftOutreach } from '@/lib/agent/message';
+import { composeOutreach } from '@/lib/agents/sdr/department-chief';
 import { enqueueApproval } from '@/lib/helix/notify';
 import { approveAndRun } from '@/lib/helix/executor';
 import { resolveMode } from '@/lib/autonomy/resolve';
@@ -37,8 +37,8 @@ export async function POST(request: NextRequest) {
     });
     const f = (name: FieldName) => enrich.results.find((r) => r.field === name)?.value ?? undefined;
 
-    // 2) Draft a personalized message (Claude).
-    const draft = await draftOutreach({
+    // 2) Draft via the drafting department: Strategist → Writer → Critic → Editor.
+    const draft = await composeOutreach({
       fullName: input.fullName,
       title: body.title,
       company: f('company_name') ?? input.companyName,

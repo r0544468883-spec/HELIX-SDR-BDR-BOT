@@ -10,6 +10,9 @@
 import type { EnrichmentResult } from '@/lib/types';
 import { verifyField } from './roles/verifier';
 import { critiqueOutreach } from './roles/outreach-critic';
+import { strategize } from './roles/strategist';
+import { revise } from './roles/reviser';
+import { draftOutreach, type Draft, type DraftInput } from '@/lib/agent/message';
 import type { OutreachReview } from './contract';
 
 export async function verifyEnrichments(
@@ -55,4 +58,50 @@ export async function reviewOutreach(message: string, channel: string): Promise<
   }
   const review = await critiqueOutreach(message, channel).catch(() => null);
   return review ?? HELD_OUTREACH;
+}
+
+const composeText = (d: { subject?: string; body: string }): string =>
+  d.subject ? `נושא: ${d.subject}\n\n${d.body}` : d.body;
+
+// The drafting department: Strategist (pick the angle) → Writer (draft) → Critic
+// (find what's wrong) → Editor (revise once to fix it + sound human). Returns the
+// improved draft plus the final send-review, so the route enqueues better copy and
+// the autonomy gate has a verdict in hand. Best-effort: any agent failing falls
+// back to the previous step's output (never worse than today's single-shot draft).
+export async function composeOutreach(
+  input: DraftInput,
+): Promise<Draft & { review: OutreachReview }> {
+  const language = input.language ?? 'he';
+  const channel = input.channel ?? 'email';
+
+  // 1) Strategist — choose the strongest angle + the one hook worth using.
+  const facts = [
+    input.fullName && `שם: ${input.fullName}`,
+    input.title && `תפקיד: ${input.title}`,
+    input.company && `חברה: ${input.company}`,
+    input.industry && `תעשייה: ${input.industry}`,
+    input.techStack && `טכנולוגיה: ${input.techStack}`,
+  ].filter(Boolean).join('\n');
+  const strategy = await strategize({ facts, hooks: input.hooks, offer: input.offer, channel, language }).catch(() => null);
+
+  // 2) Writer — draft, guided by the brief and the single chosen hook.
+  let draft = await draftOutreach({
+    ...input,
+    brief: strategy?.brief,
+    hooks: strategy?.chosenHook ? [strategy.chosenHook] : input.hooks,
+  });
+
+  // 3) Critic — find what's wrong. 4) Editor — revise once if fixable or too AI-sounding.
+  let review = await critiqueOutreach(composeText(draft), channel).catch(() => null);
+  const needsRevise = (review?.verdict === 'revise') || draft.aiScore > 60;
+  if (needsRevise) {
+    const feedback = [...(review?.risks ?? []), draft.aiScore > 60 ? 'נשמע מלאכותי מדי — הפוך לאנושי וטבעי' : ''];
+    const revised = await revise({ subject: draft.subject, body: draft.body }, feedback, language, channel).catch(() => null);
+    if (revised) {
+      draft = { ...draft, subject: revised.subject, body: revised.body };
+      review = await critiqueOutreach(composeText(draft), channel).catch(() => review);
+    }
+  }
+
+  return { ...draft, review: review ?? HELD_OUTREACH };
 }

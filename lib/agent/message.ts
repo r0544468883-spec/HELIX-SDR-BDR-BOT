@@ -15,6 +15,8 @@ export interface DraftInput {
   offer: string;
   language?: 'he' | 'en';
   channel?: 'email' | 'whatsapp' | 'telegram' | 'linkedin';
+  /** Optional strategy brief from the Strategist agent — the chosen angle/hook to follow. */
+  brief?: string;
 }
 
 export interface Draft {
@@ -51,7 +53,8 @@ ${CHANNEL_GUIDE[channel]}
 Rules: use the buyer's context, not generic filler. One clear ask. No hype, no "I hope this finds you well". Sound like a real person.
 Respond as JSON only: {"subject": string|null, "body": string, "aiScore": number}. aiScore = 0-100 estimate of how AI-generated the text sounds (be honest; lower is better).`;
 
-  const user = `Prospect:\n${facts}\n\nOur offer / reason to reach out:\n${input.offer}\n\nWrite the ${channel} message.`;
+  const brief = input.brief ? `\n\nStrategy brief (follow it — this is the chosen angle/hook):\n${input.brief}` : '';
+  const user = `Prospect:\n${facts}\n\nOur offer / reason to reach out:\n${input.offer}${brief}\n\nWrite the ${channel} message.`;
 
   const completion = await llm.chat.completions.create({
     model: CLAUDE_MODEL,
