@@ -3,6 +3,7 @@ import { EnrichmentResult, SearchResult, EnrichmentField } from '../types';
 import { parseEmail } from '../strategies/email-parser';
 import { FirecrawlService } from '../services/firecrawl';
 import { OpenAIService } from '../services/openai';
+import { verifyEnrichments } from '@/lib/agents/sdr/department-chief';
 
 export class AgentOrchestrator {
   private firecrawl: FirecrawlService;
@@ -240,8 +241,16 @@ export class AgentOrchestrator {
       }
       
       // Convert to enrichment result format
-      const enrichmentResults = this.formatEnrichmentResults(enrichments, fields);
-      
+      const formatted = this.formatEnrichmentResults(enrichments, fields);
+
+      // Adversarial verification (charter §4b): the Critic checks each extracted
+      // field against its cited sources and downgrades confidence for claims the
+      // sources don't actually support — so confident-but-wrong data is filtered
+      // by the confidence thresholds instead of flowing into the CRM as fact.
+      // Best-effort: never blocks completion, never fabricates a value.
+      if (onAgentProgress) onAgentProgress('Verifier: cross-checking extracted fields against their sources', 'agent');
+      const enrichmentResults = await verifyEnrichments(formatted).catch(() => formatted);
+
       // Log final enrichment summary
       const enrichedFields = Object.entries(enrichmentResults).filter(([, r]) => r.value).map(([name]) => name);
       const missingFields = fields.filter(f => !enrichmentResults[f.name]?.value).map(f => f.name);
