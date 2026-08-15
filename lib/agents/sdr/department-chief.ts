@@ -12,6 +12,7 @@ import { verifyField } from './roles/verifier';
 import { critiqueOutreach } from './roles/outreach-critic';
 import { strategize } from './roles/strategist';
 import { revise } from './roles/reviser';
+import { checkDeliverability } from './roles/deliverability';
 import { draftOutreach, type Draft, type DraftInput } from '@/lib/agent/message';
 import type { OutreachReview } from './contract';
 
@@ -91,7 +92,20 @@ async function refineAndReview(
       review = await critiqueOutreach(composeText(draft), channel).catch(() => review);
     }
   }
-  return { ...draft, review: review ?? HELD_OUTREACH };
+
+  // Deliverability gate: even a brand-safe message that trips spam filters
+  // shouldn't auto-send (it burns the sender's domain). High risk → not safe.
+  let final = review ?? HELD_OUTREACH;
+  const deliver = checkDeliverability({ subject: draft.subject, body: draft.body });
+  if (deliver.risk === 'high') {
+    final = {
+      ...final,
+      safeToSend: false,
+      risks: [...final.risks, ...deliver.reasons],
+      note: final.note ? `${final.note} · Deliverability: ${deliver.reasons.join(', ')}` : `Deliverability: ${deliver.reasons.join(', ')}`,
+    };
+  }
+  return { ...draft, review: final };
 }
 
 function factsOf(input: DraftInput): string {
