@@ -13,6 +13,7 @@ import { critiqueOutreach } from './roles/outreach-critic';
 import { strategize } from './roles/strategist';
 import { revise } from './roles/reviser';
 import { checkDeliverability } from './roles/deliverability';
+import { handleObjection } from './roles/objection-handler';
 import { draftOutreach, type Draft, type DraftInput } from '@/lib/agent/message';
 import type { OutreachReview } from './contract';
 
@@ -144,10 +145,18 @@ export async function composeFollowup(
 ): Promise<Draft & { review: OutreachReview }> {
   const language = input.language ?? 'he';
   const channel = input.channel ?? 'email';
+
+  // Objection-handler: if the outcome carries the prospect's reply, classify the
+  // objection and hand the writer a response strategy.
+  const objection = await handleObjection(input.outcome).catch(() => null);
+  const objectionLine = objection?.strategy
+    ? `\nהתנגדות שזוהתה: ${objection.type}. אסטרטגיית-מענה: ${objection.strategy}.`
+    : '';
+
   const brief = `זו פנייה חוזרת (follow-up), לא פנייה ראשונה.
 ההודעה הקודמת ששלחנו:
 """${(input.priorMessage || '').slice(0, 600)}"""
-מה שקרה מאז: ${input.outcome}.
+מה שקרה מאז: ${input.outcome}.${objectionLine}
 כתוב follow-up קצר ולא-נודניק שמוסיף ערך או זווית חדשה (תובנה, נתון, שאלה ממוקדת) — לא "רק מוודא שקיבלת". אם אין מה להוסיף, קצר עדיף.`;
   const draft = await draftOutreach({ ...input, brief });
   return refineAndReview(draft, channel, language);
