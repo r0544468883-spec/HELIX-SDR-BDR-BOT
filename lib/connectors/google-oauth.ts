@@ -5,6 +5,7 @@
 const SCOPE = [
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/calendar.events', // book meetings / read free-busy
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ');
 
